@@ -1,3 +1,3 @@
 # LLM-project
 Repo for the LLM-based playlist recommender system
-EURECOM
+EURECOM 2024--2025
