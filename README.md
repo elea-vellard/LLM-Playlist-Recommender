@@ -1,7 +1,7 @@
 # LLM-project
 Repo for the LLM-based playlist recommender system
 
-Steps:
+# Steps
 
 1. **Pre-processing of data**: Run transform-dataset/json2csv.py to transform initial json slices into csv files (more interpretable), then use transform-dataset/data-split.py to split the dataset into 3 sets (train, validation, test)
 
