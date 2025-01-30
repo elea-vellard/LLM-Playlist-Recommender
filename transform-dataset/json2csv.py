@@ -8,8 +8,8 @@ import json
 from os import listdir, path
 
 # Definit input and output paths
-input_dir = '/data/playlist_continuation_data/slices'
-output_dir = '/data/playlist_continuation_data/slices/csvs'
+input_dir = '/data/million_playlist_dataset'
+output_dir = '/data/playlist_continuation_data/csvs'
 os.makedirs(output_dir, exist_ok=True)#create a new directory to store csv files
 
 # Open files in writing mode
