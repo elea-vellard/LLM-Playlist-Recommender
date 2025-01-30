@@ -1,35 +1,51 @@
-# LLM-project
-Repo for the LLM-based playlist recommender system
+### README
 
-# Steps
-
-1. **Pre-processing of data**: Run transform-dataset/json2csv.py to transform initial json slices into csv files (more interpretable), then use transform-dataset/data-split.py to split the dataset into 3 sets (train, validation, test)
+## 1. Transform and pre-process the dataset
+Run:
 ```bash
 python3 transform-dataset/json2csv.py
-python3 transform-dataset/data-split.py
+```
+to transform the dataset to json files to user-readable csv files.
+
+## 2. Embedding generation and clustering
+First, playlists titles and tracks are embedded using a pre-trained SentenceBERT model and stored in /embeddings/embeddings.pkl:
+```bash
+python3 clustering-no-split/embeddings/track_embeddings_no-split.py
 ```
 
-3. **clustering**: Run clustering/embeddings/tracks_embeddings.py to compute the embeddings of every tracks and store them in picle files (for faster computation of clusters) using pre-trained sentence bert.
-   Run clustering/clusters/clustering.py to compute 3 files of clusters (.csv files) for the sets of train, validation and test.
-
+Then, the K-means clustering algorithm is applied to create the clusters, and the generated csv file (in /clustering-no-split/clusters/200) is modified to calculate and include the percentage of exact matches:
 ```bash
-python3 clustering/embeddings/tracks_embeddings.py
-python3 clustering/clusters/clustering.py
+python3 clustering-no-split/clusters/clustering-no-split.py clustering-no-split/clusters/percent-no-split.py
+```
+The resulted csv file is stored into clustering-no-split/clusters/200/clusters_with_exact_matches.csv
+
+Apply the clean algorithm to remove miscellaenous clusters and save the output in clustering-no-split/clean/200:
+```bash
+python3 clustering-no-split/clean/clean.py
+```
+Finally, randomly split the clusters:
+```bash
+python3 clustering-no-split/split/split.py
+```
+## 3. FinetuningRun:
+```bash
+python3 finetuning/finetuning_high_level.py
+```
+to train the sentenceBERT model and store the configuration in finetuning/fine_tuned_model/.
+## 4. Generate the embeddings for playlists titles using the fine-tuned model.
+run :
+```bash
+python3 embeddings/playlists_embeddings_final.py
+```
+saves a pickle file in embeddings/new-model/playlists_embeddings.pkl
+
+## 5. Generate the recommendation on the test set (input a pid)
+Run:
+```bash
+python3 similarity/test-new-model.py
 ```
 
-5. **finetuning**: Run finetuning/finetuning.py to finetune the sentence bert model.
-   Run finetuning/plot-loss/plot-loss.py to plot the loss of the trained model (train and validation losses).
+Generate the recommendation for a playlist title :
 ```bash
-python3 finetuning/finetuning.py
-python3 finetuning/plot-loss/plot-loss.py
-```
-
-7. **embeddings**: Run embeddings/playlists_embeddings.py to compute the embeddings of each playlist's title using the trained model, and store them in a pickle file.
-```bash
-python3 embeddings/playlists_embeddings.py
-```
-
-9. **Predict relevant tracks**: Run similarity/test.py to generate the most relevant songs according to an input playlist name.
-```bash
-python3 similarity/test.py
+python3 similarity/recommend.py
 ```
