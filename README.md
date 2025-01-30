@@ -27,7 +27,8 @@ Finally, randomly split the clusters:
 ```bash
 python3 clustering-no-split/split/split.py
 ```
-## 3. FinetuningRun:
+## 3. Finetuning
+Run:
 ```bash
 python3 finetuning/finetuning_high_level.py
 ```
@@ -40,12 +41,12 @@ python3 embeddings/playlists_embeddings_final.py
 saves a pickle file in embeddings/new-model/playlists_embeddings.pkl
 
 ## 5. Generate the recommendation on the test set (input a pid)
-Run:
+Evluate the metrics for a given test playlist:
 ```bash
 python3 similarity/test-new-model.py
 ```
 
-Generate the recommendation for a playlist title :
+Generate the recommendation for a playlist title:
 ```bash
 python3 similarity/recommend.py
 ```
