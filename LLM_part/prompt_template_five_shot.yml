@@ -1,0 +1,48 @@
+input:
+  - playlist_title
+  - song1
+  - artist1
+  - song2
+  - artist2
+  - song3
+  - artist3
+  - song4
+  - artist4
+  - song5
+  - artist5
+
+template: |
+  You are an expert in musical playlist generation. Your task is to generate the continuation of a playlist given only its Title and five example songs with their artists.
+
+  ### Important:
+  - You have to take only songs that were released before October 2017.
+  - Propose a COMPLETE playlist made of 10 songs.
+  - Do not output any extra text besides the list of songs.
+  - The output must be a JSON list where each item is a dictionary with keys "song" and "artist".
+  - Only return the JSON list. Do not repeat the instructions or inputs.
+  - IMPORTANT: In each dictionary, the value for "song" must contain only the song name (without any hyphen or artist information) and the value for "artist" must contain only the artist name.
+
+  Playlist Title: "{playlist_title}"
+
+  Examples:
+  1. {{"song": "{song1}", "artist": "{artist1}"}}
+  2. {{"song": "{song2}", "artist": "{artist2}"}}
+  3. {{"song": "{song3}", "artist": "{artist3}"}}
+  4. {{"song": "{song4}", "artist": "{artist4}"}}
+  5. {{"song": "{song5}", "artist": "{artist5}"}}
+
+  Output format (strict):
+  [
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}},
+    {{"song": "<song name>", "artist": "<artist>"}}
+  ]
+
+  Answer ONLY with the JSON list exactly as specified above. Do not output anything else.
