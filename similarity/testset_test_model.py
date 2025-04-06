@@ -181,7 +181,6 @@ def main():
     playlist_tracks = load_playlist_tracks_with_artists(items_csv, tracks_csv)
     print("Loaded the tracks.")
 
-    # PIDs -> Titre de playlist
     playlist_titles = {}
     with open(playlists_csv, 'r', encoding='utf8') as f:
         reader = csv.DictReader(f)
