@@ -21,7 +21,8 @@ template: |
   - The output must be a JSON list where each item is a dictionary with keys "song" and "artist".
   - Only return the JSON list. Do not repeat the instructions or inputs.
   - IMPORTANT: In each dictionary, the value for "song" must contain only the song name (without any hyphen or artist information) and the value for "artist" must contain only the artist name.
-
+  - All recommended songs must be UNIQUE and must not repeat any of the five example songs provided
+  
   Playlist Title: "{playlist_title}"
 
   Examples:
