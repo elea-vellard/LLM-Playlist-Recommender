@@ -131,7 +131,7 @@ def main():
     api_key = None
     verbose = True
 
-    # Liste of 22 playlists to generate
+    # List of 22 playlists to generate
     # Each playlist contains a title and 5 songs with their respective artists
     playlists = [
         {
