@@ -1,5 +1,5 @@
 #######################################
-# Code to generate recommendations by Title
+# Code to generate the recommendation #
 #######################################
 
 import os
@@ -9,56 +9,58 @@ from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 from collections import Counter
 import csv
-
-# Hugging Face imports
 from transformers import AutoTokenizer, AutoModel
+import math
 
-########################################
-# 1) Load the Fine-Tuned HF Model
-########################################
+##########################
+# 1) Load Fine-tuned Model
+##########################
 
 def load_fine_tuned_model(model_dir, base_model_name='sentence-transformers/all-MiniLM-L6-v2'):
-    """
-    Loads both the tokenizer (from 'base_model_name') and
-    the fine-tuned Hugging Face model (from 'model_dir').
-    """
+
+    # Load the tokenizer from the same base model
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+
+    # Load the fine-tuned transformer model
     model = AutoModel.from_pretrained(model_dir)
     model.eval()
+
+    # Minimal addition for GPU usage
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
     return tokenizer, model
 
-########################################
-# 2) Compute the embedding for a user input title
-########################################
+
+##############################
+# 2) Compute the playlist embedding
+##############################
 
 def get_playlist_embedding(playlist_name, tokenizer, model):
-    """
-    Tokenize and forward-pass using the fine-tuned model,
-    then do mean pooling over the last hidden states.
-    """
-    if not isinstance(playlist_name, str):
-        playlist_name = str(playlist_name)
+    '''if not isinstance(playlist_name, str):
+        playlist_name = str(playlist_name)'''
 
     with torch.no_grad():
-        inputs = tokenizer(playlist_name, return_tensors='pt', truncation=True, padding=True)
+        inputs = tokenizer(playlist_name, return_tensors='pt', truncation=True, padding=True).to(model.device)
         outputs = model(**inputs)
         last_hidden = outputs.last_hidden_state  # shape: (batch_size, seq_len, hidden_size)
         embedding = last_hidden.mean(dim=1).squeeze().cpu().numpy()
 
     return embedding
 
-########################################
+
+#################################
 # 3) Load Precomputed Embeddings
-########################################
+#################################
 
 def load_playlist_embeddings(embeddings_file):
     with open(embeddings_file, 'rb') as f:
         playlist_embeddings = pickle.load(f)
     return playlist_embeddings
 
-########################################
-# 4) Build pid->tracks dictionary
-########################################
+#########################################
+# 4) Associate track metadata with tracks
+#########################################
 
 def load_playlist_tracks_with_artists(items_csv, tracks_csv):
     track_metadata = {}
@@ -84,88 +86,128 @@ def load_playlist_tracks_with_artists(items_csv, tracks_csv):
 
     return playlist_tracks
 
-########################################
-# 5) Find Similar Playlists
-########################################
 
-def find_similar_playlists(user_input_title, playlist_embeddings, tokenizer, model, top_k=50):
-    """
-    1) Generate an embedding for the user-input playlist title.
-    2) Compare to the precomputed embeddings dictionary.
-    3) Return the top_k most similar.
-    """
-    user_embedding = get_playlist_embedding(user_input_title, tokenizer, model)
+############################
+# 5) Find Similar Playlists
+############################
+
+def find_similar_playlists(playlist_name, playlist_embeddings, tokenizer, model, top_k):
+    playlist_embedding = get_playlist_embedding(playlist_name, tokenizer, model)
 
     similarities = []
-    for pid, data in tqdm(playlist_embeddings.items(), desc="Scoring Playlists", unit="playlist"):
-        similarity = cosine_similarity([user_embedding], [data["embedding"]])[0][0]
+    for pid, metadata in tqdm(playlist_embeddings.items(), desc="Scoring Playlists", unit="playlist"):
+        similarity = cosine_similarity([playlist_embedding], [metadata["embedding"]])[0][0]
         similarities.append((pid, similarity))
 
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[:top_k]
+    sorted_playlists = sorted(similarities, key=lambda x: x[1], reverse=True)
+    return sorted_playlists[:top_k]
+
 
 ########################################
-# 6) Get the Top Occurring Songs
+# 6) Retrieve the Top Songs from those playlists
 ########################################
 
-def get_top_songs_with_artists(similar_playlists, playlist_tracks, top_k=66):
-    """
-    For each similar playlist, retrieve songs from playlist_tracks
-    and count their occurrences.
-    """
-    from collections import Counter
+def get_top_songs_with_artists(similar_playlists, playlist_tracks, top_k=10):
     song_counter = Counter()
-
     for pid, _ in tqdm(similar_playlists, desc="Counting songs", unit="playlist"):
         pid_str = str(pid)
         if pid_str in playlist_tracks:
-            for track in playlist_tracks[pid_str]:
-                song_counter[(track["track_name"], track["artist_name"])] += 1
-
+            for track_metadata in playlist_tracks[pid_str]:
+                song_counter[(track_metadata["track_name"], track_metadata["artist_name"])] += 1
     return song_counter.most_common(top_k)
 
+
 ########################################
-# 7) Main Function
+# 7) Evaluation metrics
 ########################################
 
+def compute_metrics(recommended_songs, relevant_songs, top_n=10):
+    # Sets
+    G_T = set(relevant_songs)
+    G_A = set(artist for _, artist in relevant_songs)
+
+    R = len(G_T)
+    top_r = recommended_songs[:R]
+    S_T = set(top_r)
+    S_A = set(artist for _, artist in top_r)
+
+    # R-Precision with artist bonus
+    exact_matches = S_T & G_T
+    matched_artists = S_A & G_A
+    track_score = len(exact_matches)
+    artist_score = len(matched_artists) * 0.25
+    r_precision = (track_score + artist_score) / R if R > 0 else 0.0
+
+    # HIT@N, Precision, Recall, MRR
+    hits = sum(1 for song in recommended_songs[:top_n] if song in G_T)
+    hit_score = hits / min(top_n, len(G_T)) if len(G_T) > 0 else 0.0
+    precision = hits / len(recommended_songs[:top_n]) if len(recommended_songs[:top_n]) > 0 else 0.0
+    recall = hits / len(G_T) if len(G_T) > 0 else 0.0
+
+    mrr = 0.0
+    for i, song in enumerate(recommended_songs[:top_n]):
+        if song in G_T:
+            mrr = 1 / (i + 1)
+            break
+
+    # NDCG
+    relevance_list = [1 if song in G_T else 0 for song in recommended_songs[:top_n]]
+
+    def dcg(rel):
+        return sum(rel_i / math.log2(idx + 2) for idx, rel_i in enumerate(rel))
+
+    dcg_val = dcg(relevance_list)
+    ideal_rel = sorted(relevance_list, reverse=True)
+    idcg_val = dcg(ideal_rel)
+    ndcg = dcg_val / idcg_val if idcg_val > 0 else 0.0
+
+    return {
+        "HIT@N": hit_score,
+        "Precision@N": precision,
+        "Recall@N": recall,
+        "MRR@N": mrr,
+        "R-Precision": r_precision,
+        "NDCG": ndcg
+    }
+
+########################################
+# 8) Main Function
+########################################
 def main():
-    # File paths
-    model_dir = "/home/vellard/playlist_continuation/finetuning/fine_tuned_model"
-    playlist_embeddings_file = "/home/vellard/playlist_continuation/embeddings/new-model/playlists_embeddings.pkl"
-    items_csv = "/data/playlist_continuation_data/csvs/items.csv"
-    tracks_csv = "/data/playlist_continuation_data/csvs/tracks.csv"
+    model_dir = "/home/vellard/playlist_continuation/fine_tuned_model_no_scheduler_2"
+    playlist_embeddings_file = "/home/vellard/playlist_continuation/playlists_embeddings/final_embeddings/playlists_embeddings_scheduler.pkl"
+    items_csv = "/data/csvs/items.csv"
+    tracks_csv = "/data/csvs/tracks.csv"
+    playlists_csv = "/data/csvs/playlists.csv"
 
-    # 1. Load the HF model & tokenizer
     tokenizer, model = load_fine_tuned_model(model_dir)
     print("Loaded tokenizer & fine-tuned model successfully.")
 
-    # 2. Load the precomputed playlist embeddings
     playlist_embeddings = load_playlist_embeddings(playlist_embeddings_file)
-
-    # 3. Load track data
     playlist_tracks = load_playlist_tracks_with_artists(items_csv, tracks_csv)
 
-    # 4. Ask user for a playlist NAME (not PID)
-    playlist_name = input("Enter a playlist name: ")
-    print(f"Generating recommendations for custom playlist name: '{playlist_name}'...")
+    # Enter a playlist title
+    playlist_name = input("Enter the playlist name: ").strip()
+    print(f"Generating recommendations for playlist: '{playlist_name}'...")
 
-    # 5. Find the most similar playlists from the embedding dictionary
-    top_playlists = find_similar_playlists(playlist_name, playlist_embeddings, tokenizer, model, top_k=10)
+    top_playlists = find_similar_playlists(playlist_name, playlist_embeddings, tokenizer, model, top_k=50)
 
     print("\nTop Similar Playlists:")
-    for i, (sim_pid, sim_score) in enumerate(top_playlists, start=1):
-        # Each embedding dict item might have a "title" key
-        # so we can display the known playlist title
-        known_title = playlist_embeddings[sim_pid]["title"]
-        print(f"{i}. PID={sim_pid}, Title='{known_title}', Similarity: {sim_score:.4f}")
+    playlist_titles = {}
+    with open(playlists_csv, 'r', encoding='utf8') as f:
+        reader = csv.DictReader(f)
+        for row in tqdm(reader, desc="Loading playlist titles", unit="playlist"):
+            pid_str = row["pid"].strip()
+            playlist_titles[pid_str] = row["name"]
+    for i, (similar_pid, similarity) in enumerate(top_playlists, start=1):
+        title = playlist_titles.get(str(similar_pid), "Unknown Playlist Title")
+        print(f"{i}. Playlist Title: {title}, Similarity: {similarity:.4f}")
 
-    # 6. Retrieve top songs from these similar playlists
     top_songs = get_top_songs_with_artists(top_playlists, playlist_tracks, top_k=10)
 
     print("\nTop Recommended Songs:")
     for i, ((song, artist), count) in enumerate(top_songs, start=1):
-        print(f"{i}. Song: '{song}', Artist: '{artist}', Occurrences: {count}")
-
-    # 7. No metrics: we are skipping the evaluation step
+        print(f"{i}. Song: {song}, Artist: {artist}, Occurrences: {count}")
 
 if __name__ == "__main__":
     main()
