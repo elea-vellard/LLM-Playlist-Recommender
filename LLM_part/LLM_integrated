@@ -1,0 +1,193 @@
+import os
+# Redirect caches to /data to avoid home disk quota
+os.environ["HF_HOME"] = "/data/playlist_lib/.cache/huggingface"
+os.environ["XDG_CACHE_HOME"] = "/data/playlist_lib/.cache"
+os.environ["TRITON_CACHE_DIR"] = "/data/playlist_lib/.cache/triton"
+os.environ["PIP_CACHE_DIR"] = "/data/playlist_lib/.cache/pip"
+os.environ["PYTHONUSERBASE"] = "/data/playlist_lib/.local"
+os.environ["PATH"] = os.environ["PYTHONUSERBASE"] + "/bin:" + os.environ.get("PATH", "")
+os.environ["LD_LIBRARY_PATH"] = "/homes/vellard/.local/lib/python3.10/site-packages/cusparselt/lib:" + os.environ.get("LD_LIBRARY_PATH", "")
+
+import torch
+import pickle
+import json
+import re
+from collections import Counter
+from tqdm import tqdm
+import csv
+import numpy as np
+from gensim.models import KeyedVectors
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
+# 1) Load Fine-tuned Model
+def load_fine_tuned_model(model_dir, base_model_name='sentence-transformers/all-MiniLM-L6-v2'):
+    tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+    model = AutoModel.from_pretrained(model_dir)
+    model.eval()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    return tokenizer, model
+
+# 2) Compute the playlist embedding
+def get_playlist_embedding(playlist_name, tokenizer, model):
+    with torch.no_grad():
+        inputs = tokenizer(playlist_name, return_tensors='pt', truncation=True, padding=True).to(model.device)
+        outputs = model(**inputs)
+        emb = outputs.last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
+    return emb
+
+# 3) Load Precomputed Embeddings
+def load_playlist_embeddings(emb_file):
+    with open(emb_file, 'rb') as f:
+        return pickle.load(f)
+
+# 4) Load tracks and metadata
+def load_playlist_tracks_with_artists(items_csv, tracks_csv):
+    meta = {}
+    with open(tracks_csv, 'r', encoding='utf8') as f:
+        for r in tqdm(csv.DictReader(f), desc="Loading track metadata"):
+            meta[r['track_uri']] = {'track_name': r['track_name'], 'artist_name': r['artist_name']}
+    playlists = {}
+    with open(items_csv, 'r', encoding='utf8') as f:
+        for r in tqdm(csv.DictReader(f), desc="Loading playlist tracks"):
+            pid, uri = r['pid'].strip(), r['track_uri']
+            playlists.setdefault(pid, [])
+            if uri in meta:
+                playlists[pid].append(meta[uri])
+    return playlists
+
+# 4bis) Load titles
+def load_playlist_titles(csv_file):
+    t = {}
+    with open(csv_file, 'r', encoding='utf8') as f:
+        for r in tqdm(csv.DictReader(f), desc="Loading titles"):
+            t[r['pid'].strip()] = r['name']
+    return t
+
+# 5) Similar playlists
+def load_embeddings_to_keyedvectors(embeds):
+    keys = list(embeds.keys())
+    vecs = np.stack([embeds[k]['embedding'] for k in keys])
+    kv = KeyedVectors(vector_size=vecs.shape[1])
+    kv.add_vectors(keys, vecs)
+    return kv
+
+def find_similar_playlists(name, kv, tokenizer, model, top_k):
+    emb = get_playlist_embedding(name, tokenizer, model)
+    return kv.similar_by_vector(emb, topn=top_k)
+
+# 6) Frequency-based baseline
+def get_top_songs_with_artists(similar, tracks, top_k=10):
+    cnt = Counter()
+    for pid, _ in similar:
+        for t in tracks.get(str(pid), []):
+            cnt[(t['track_name'], t['artist_name'])] += 1
+    return cnt.most_common(top_k)
+
+# 7) LLM-based reranking
+available_llms = {
+    "llama32k": "togethercomputer/LLaMA-2-7B-32K"
+}
+
+def build_rerank_prompt(playlist_title: str,
+                        candidates: list[tuple[str, str]],
+                        top_n: int = 10) -> str:
+    """
+    Build a minimal prompt.
+    - Emphasize the list is unordered.
+    - End with 'Recommendations:' + '1.' to seed the model's numbering.
+    """
+    cands = candidates[:120]
+    bullet_lines = "\n".join(f"- \"{song}\" – {artist}" for song, artist in cands)
+
+    return f"""
+You are a music recommendation assistant.
+Given an ARBITRARY list of candidates (NOT sorted) and a playlist title,
+pick the {top_n} tracks most relevant to that title—do NOT repeat
+the candidates or any part of this prompt.
+
+Playlist title:
+\"{playlist_title}\"
+
+Candidate tracks (first {len(cands)} shown in arbitrary order):
+{bullet_lines}
+
+Recommendations:
+1.""".lstrip()
+
+
+def get_llm_recommendations(playlist_title, candidates, top_n=10, model_key='llama32k'):
+    """
+    Call the LLM, then parse exactly ten lines of the form:
+      1. Song – Artist
+    """
+    hf_name = available_llms[model_key]
+    tok = AutoTokenizer.from_pretrained(hf_name, use_auth_token=True)
+    mdl = AutoModelForCausalLM.from_pretrained(
+        hf_name,
+        use_auth_token=True,
+        load_in_8bit=True,
+        device_map="auto"
+    )
+
+    prompt = build_rerank_prompt(playlist_title, candidates, top_n)
+    print(f"Prompt ({len(prompt)} chars):\n{prompt}\n")
+
+    # tokenize + move to device
+    inputs = tok(prompt, return_tensors='pt', truncation=True, max_length=2048)
+    inputs = {k: v.to(mdl.device) for k, v in inputs.items()}
+
+    out = mdl.generate(
+        **inputs,
+        max_new_tokens=200,
+        do_sample=True,
+        temperature=0.7,
+        eos_token_id=tok.eos_token_id,
+        pad_token_id=tok.eos_token_id
+    )
+    raw = tok.decode(out[0], skip_special_tokens=True)
+
+    # parse numbered lines
+    recs = []
+    for line in raw.splitlines():
+        m = re.match(r'^\s*(\d+)\.\s*(.+?)\s*–\s*(.+)$', line)
+        if m:
+            recs.append({"song": m.group(2), "artist": m.group(3)})
+            if len(recs) >= top_n:
+                break
+
+    return recs
+
+# 8) Main
+def main():
+    base = "/home/vellard/playlist_continuation"
+    tok, mdl = load_fine_tuned_model(base + "/fine_tuned_model_no_scheduler_2")
+    print("Model loaded.")
+    embeds = load_playlist_embeddings(base + "/playlists_embeddings/final_embeddings/playlists_embeddings_scheduler.pkl")
+    tracks = load_playlist_tracks_with_artists("/data/csvs/items.csv", "/data/csvs/tracks.csv")
+    titles = load_playlist_titles("/data/csvs/playlists.csv")
+    kv = load_embeddings_to_keyedvectors(embeds)
+
+    name = input("Enter playlist name: ").strip()
+    sim = find_similar_playlists(name, kv, tok, mdl, 50)
+    print("Similar playlists:")
+    for i, (pid, score) in enumerate(sim, 1):
+        print(f"{i}. {titles.get(str(pid), '?')} ({score:.4f})")
+
+    cands, seen = [], set()
+    for pid, _ in sim:
+        for t in tracks.get(str(pid), []):
+            key = (t['track_name'], t['artist_name'])
+            if key not in seen:
+                seen.add(key)
+                cands.append(key)
+
+    print(f"Collected {len(cands)} candidate songs.")
+    print(f"Sample: {cands[:5]}")
+
+    recs = get_llm_recommendations(name, cands, top_n=10, model_key='llama32k')
+    print("Recommendations:")
+    for i, r in enumerate(recs, 1):
+        print(f"{i}. {r['song']} – {r['artist']}")
+
+if __name__ == '__main__':
+    main()
