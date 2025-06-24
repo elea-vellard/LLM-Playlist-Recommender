@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Language Model-Based Playlist Recommender app</title>
+
+    <style>
+        :root {
+            --bg: #181818;
+            --text: #e0e0e0;
+            --input-bg: #282828;
+            --input-border: #333;
+            --input-text: #ffffff;
+            --placeholder: #8a8a8a;
+            --card-bg: #282828;
+            --card-bg-light: #202020;
+            --card-hover: #333333;
+            --accent: #1bba56;
+        }
+
+        body {
+            margin: 0;
+            padding: 28px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', 'Roboto', 'Ubuntu', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* ─── top bar ─── */
+        .top-bar {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .top-bar img {
+            height: 40px
+        }
+
+        /* ─── title & subtitle ─── */
+        .title {
+            font-size: 2.2rem;
+            font-weight: bold;
+            margin: 6px 0 0;
+            text-align: center
+        }
+
+        .subtitle {
+            font-size: 0.8rem;
+            color: #888;
+            text-align: center;
+            margin: 8px 0 18px;
+        }
+
+        .accent-line {
+            width: 220px;
+            height: 1px;
+            background: var(--accent);
+            border-radius: 1px;
+            margin: 0 auto 10px;
+        }
+
+        /* ─── description ─── */
+        .description {
+            max-width: 900px;
+            text-align: center;
+            font-size: 1rem;
+            line-height: 1.45;
+            margin-bottom: 28px;
+        }
+
+        /* ─── search frame & input ─── */
+        .search-box {
+            width: 100%;
+            max-width: 700px;
+            background: var(--card-bg-light);
+            border-radius: 30px;
+            padding: 32px 28px;
+            margin-bottom: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .search-instructions {
+            color: var(--accent);
+            font-style: italic;
+            font-size: 1rem;
+            text-align: center;
+            padding-top: 0px;
+            padding-bottom: 5px;
+        }
+
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 12px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 24px;
+            color: var(--input-text);
+            font-size: 0.9rem;
+        }
+
+        .search-box input::placeholder {
+            color: var(--placeholder)
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(27, 186, 86, .3);
+        }
+
+        /* ─── recommendations ─── */
+        .recommendations-header {
+            width: 100%;
+            max-width: 700px;
+            font-size: 1.15rem;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+
+        .recommendations-list {
+            list-style: none;
+            padding: 0;
+            width: 100%;
+            max-width: 700px;
+        }
+
+        .recommendations-list li {
+            background: var(--card-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 8px;
+            padding: 12px 18px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background .2s;
+        }
+
+        .recommendations-list li:hover {
+            background: var(--card-hover)
+        }
+
+        .song-info {
+            display: flex;
+            flex-direction: column
+        }
+
+        .song-title {
+            font-size: 1rem;
+            color: var(--input-text)
+        }
+
+        .song-artist {
+            font-size: 0.85rem;
+            font-style: italic;
+            color: var(--placeholder)
+        }
+
+        .play-button {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: transform .12s;
+            padding: 0;
+        }
+
+        .play-button:hover {
+            transform: scale(1.15)
+        }
+
+        .play-button img {
+            width: 24px;
+            height: 24px
+        }
+
+        /* ─── footer ─── */
+        footer {
+            margin-top: 52px;
+            font-size: 0.8rem;
+            color: #888;
+            text-align: center;
+            line-height: 1.3;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Logos -->
+    <div class="top-bar">
+        <a href="https://www.eurecom.fr/en/node/388" target="_blank" rel="noopener">
+            <img src="{{ url_for('static', filename='images/eurecom-logo.png') }}" alt="Eurecom Logo">
+        </a>
+        <a href="https://github.com/elea-vellard/LLM-project" target="_blank" rel="noopener">
+            <img src="{{ url_for('static', filename='images/github-logo.png') }}" alt="GitHub Logo">
+        </a>
+    </div>
+
+    <!-- Title -->
+    <div class="title">LLM-Based Playlist Recommender</div>
+    <div class="subtitle">designed by Eléa Vellard and Enzo Charolois–Pasqua</div>
+    <div class="accent-line"></div>
+
+    <!-- Description -->
+    <div class="description">
+        <p>This project explores playlist continuation using a fine-tuned language model trained on the
+            <em>Million&nbsp;Playlist&nbsp;Dataset</em>. It combines semantic embeddings and similarity search to
+            recommend tracks that match a given playlist theme.
+        </p>
+    </div>
+
+    <!-- Search frame -->
+
+    <div class="search-box">
+        <div class="search-instructions">Type a playlist name and press Enter.</div>
+        <input id="q" type="text" placeholder="Ex: Chill evening vibes, morning coffee..."
+            onkeydown="if(event.key==='Enter') ask();">
+    </div>
+
+
+
+    <!-- Recommendations -->
+    <div id="rec-title" class="recommendations-header"></div>
+    <ul id="results" class="recommendations-list"></ul>
+
+    <!-- Footer -->
+    <footer>
+        A project by Enzo Charolois–Pasqua · Eléa Vellard · Youssra Rebboud · Pasquale Lisena · Raphael Troncy —
+        June&nbsp;2025
+    </footer>
+
+    <!-- Script -->
+    <script>
+        async function ask() {
+            const q = document.getElementById('q').value.trim();
+            if (!q) return;
+            document.getElementById('rec-title').textContent = 'Loading…';
+            document.getElementById('results').innerHTML = '';
+            try {
+                const res = await fetch(`/recommend?playlist_name=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                if (!res.ok || data.error) {
+                    document.getElementById('rec-title').textContent = 'Error fetching recommendations.'; return;
+                }
+                document.getElementById('rec-title').textContent = `Top 10 recommendations for "${q}". Click the green Spotify icon to play a
+            track.`;
+                render(data.recommendations);
+            } catch {
+                document.getElementById('rec-title').textContent = 'Unexpected error.';
+            }
+        }
+        function render(recs) {
+            const ul = document.getElementById('results'); ul.innerHTML = '';
+            recs.forEach((r, i) => {
+                const li = document.createElement('li');
+                li.innerHTML = `<div class="song-info"><span class="song-title">${i + 1}. ${r.song}</span><span class="song-artist">— ${r.artist}</span></div>`;
+                const btn = document.createElement('button');
+                btn.className = 'play-button';
+                btn.innerHTML = `<img src="{{ url_for('static', filename='images/spotify.png') }}" alt="Play on Spotify">`;
+                btn.onclick = () => { if (r.uri) { window.open(`https://open.spotify.com/track/${r.uri.split(':').pop()}`, '_blank'); } };
+                li.appendChild(btn); ul.appendChild(li);
+            });
+        }
+    </script>
+</body>
+
+</html>
