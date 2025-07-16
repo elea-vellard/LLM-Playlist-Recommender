@@ -13,6 +13,8 @@ quantitative and qualitative metrics, demonstrates that using the
 playlist title as a seed provides useful recommendations, even in a
 zero-shot scenario.
 
+The best trained model is accessible in [Zenodo](https://zenodo.org/records/15837980).
+
 ## 1. Transform and pre-process the dataset
 
 Run:
