@@ -1,5 +1,3 @@
-# README
-
 # Language Model-Based Playlist Generation Recommender
 The title of a playlist reflects its intended mood or theme, allowing
 creators to easily locate their content and enabling other users to
@@ -15,7 +13,7 @@ quantitative and qualitative metrics, demonstrates that using the
 playlist title as a seed provides useful recommendations, even in a
 zero-shot scenario.
 
-## 1. Transform and pre-process the dataset.
+## 1. Transform and pre-process the dataset
 
 Run:
 
@@ -25,7 +23,7 @@ python3 transform-dataset/json2csv.py
 
 to convert the JSON slices of the dataset into user-friendly CSV files:
 
-## 2. Embedding generation and clustering.
+## 2. Embedding generation and clustering
 
 First, playlists titles and tracks are embedded using a pre-trained SentenceBERT model and stored in a 'pickle' file:
 
@@ -58,7 +56,7 @@ Train the SentenceBERT model with two loss functions (cross-entropy and triplet 
 python3 finetuning/cross_entropy_model_finetuning.py finetuning/finetuning_triplet_loss.py
 ```
 
-## 4. Generate the embeddings for playlists titles using the fine-tuned models.
+## 4. Generate the embeddings for playlists titles using the fine-tuned models
 
 Run :
 
@@ -69,7 +67,7 @@ python3 embeddings/playlists_embeddings_final.py
 to generate embeddings for playlist titles using the fine-tuned models.
 > Make sure to adjust the model path to select either the triplet loss model, the cross-entropy loss model or the pretrained model.
 
-## 5. Generate the recommendations and evaluate the models.
+## 5. Generate the recommendations and evaluate the models
 
 Evaluate the metrics for a given test playlist:
 
@@ -89,3 +87,15 @@ Assess the model’s overall performance on the complete test set:
 python3 similarity/testset_test_model.py
 ```
 > Make sure to adjust the model path to select either the triplet loss model, the cross-entropy loss model or the pretrained model.
+
+
+## Citation
+
+If you use this software, please cite ([bib file](https://raw.githubusercontent.com/elea-vellard/LM-Playlist-Recommender/refs/heads/main/charoloisvellard2025llm-recommender.bib)):
+
+Enzo Charolois–Pasqua, Eléa Vellard, Youssra Rebboud, Pasquale Lisena,
+and Raphael Troncy. 2025. **A Language Model-Based Playlist Generation
+Recommender System**. In *Proceedings of the Nineteenth ACM Conference on
+Recommender Systems (RecSys ’25)*, September 22–26, 2025, Prague, Czech Re-
+public. ACM, New York, NY, USA, 11 pages. https://doi.org/10.1145/3705328.
+3748053

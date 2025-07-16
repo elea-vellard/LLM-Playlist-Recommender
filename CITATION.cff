@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Charoloi-Pasqua
+    given-names: Enzo
+  - family-names: Vellard
+    given-names: Eléa
+  - family-names: Rebboud
+    given-names: Youssra
+  - family-names: Lisena
+    given-names: Pasquale
+  - family-names: Troncy
+    given-names: Raphael
+title: "A Language Model-Based Playlist Generation Recommender System"
+conference: "Proceedings of the 19th ACM Conference on Recommender Systems (RecSys '25)"
+date-released: 2025-09-22
+doi: 10.1145/3705328.3748053
+url: https://doi.org/10.1145/3705328.3748053
+publisher: ACM
+place: Prague, Czech Republic
