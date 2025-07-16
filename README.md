@@ -99,5 +99,4 @@ Enzo Charolois–Pasqua, Eléa Vellard, Youssra Rebboud, Pasquale Lisena,
 and Raphael Troncy. 2025. **A Language Model-Based Playlist Generation
 Recommender System**. In *Proceedings of the Nineteenth ACM Conference on
 Recommender Systems (RecSys ’25)*, September 22–26, 2025, Prague, Czech Re-
-public. ACM, New York, NY, USA, 11 pages. https://doi.org/10.1145/3705328.
-3748053
+public. ACM, New York, NY, USA, 11 pages. https://doi.org/10.1145/3705328.3748053

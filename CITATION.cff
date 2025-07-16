@@ -24,7 +24,7 @@ preferred-citation:
   type: conference-paper
   title: "A Language Model-Based Playlist Generation Recommender System"
   authors:
-    - family-names: Charolois–Pasqua
+    - family-names: Charolois-Pasqua
       given-names: Enzo
     - family-names: Vellard
       given-names: Eléa
