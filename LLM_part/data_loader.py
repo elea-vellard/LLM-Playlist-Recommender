@@ -35,7 +35,7 @@ def load_all_playlist_data(items_csv=items_csv, tracks_csv=tracks_csv):
     track_metadata = {}
     with open(tracks_csv, 'r', encoding='utf8') as f:
         reader = csv.DictReader(f)
-        for row in tqdm(reader, desc="Loading track metadata", unit="track"):
+        for row in tqdm(reader, desc="Loading track metadata", unit=" tracks"):
             track_metadata[row["track_uri"]] = {
                 "track_name": row["track_name"],
                 "artist_name": row["artist_name"],
@@ -44,7 +44,7 @@ def load_all_playlist_data(items_csv=items_csv, tracks_csv=tracks_csv):
     playlist_tracks = {}
     with open(items_csv, 'r', encoding='utf8') as f:
         reader = csv.DictReader(f)
-        for row in tqdm(reader, desc="Loading playlist tracks", unit="playlist"):
+        for row in tqdm(reader, desc="Loading playlist tracks", unit=" playlists"):
             current_pid = row["pid"]
             track_uri = row["track_uri"]
             if current_pid not in playlist_tracks:
@@ -67,7 +67,7 @@ def load_playlists_csv(test_set=test_set) -> list:
     playlists = []
     with open(test_set, 'r', encoding='utf8') as f:
         reader = csv.DictReader(f)
-        for row in tqdm(reader, desc="Loading playlists from CSV", unit="playlist"):
+        for row in tqdm(reader, desc="Loading playlists from CSV", unit=" playlists"):
             playlist = {
                 "pid": row["Playlist ID"],
                 "playlist_title": row["Playlist Title"],

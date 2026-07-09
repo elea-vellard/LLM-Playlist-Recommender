@@ -14,15 +14,15 @@ import re
 import yaml # type: ignore
 from openai import OpenAI # type: ignore
 import time
-import torch # type: ignore
+from tqdm import tqdm # type: ignore
 import json
-from transformers import AutoModelForCausalLM, AutoTokenizer
+# from transformers import AutoModelForCausalLM, AutoTokenizer
 from langchain_core.prompts.prompt import PromptTemplate # type: ignore
 from data_loader import load_playlists_yaml, load_playlists_csv, load_all_playlist_data
 
-items_csv = "/data/items.csv"
-tracks_csv = "/data/tracks.csv"
-test_set = "/data/cluster_test.csv"
+items_csv = "./data/items.csv"
+tracks_csv = "./data/tracks.csv"
+test_set = "./data/clusters_test.csv"
 
 vllm_config = {
     "base_url": "http://helix01:8000",
@@ -71,13 +71,13 @@ def load_prompt_template(template_path):
 ## Call the GPT-4 API with retries
 def call_gpt4_api(prompt, model, max_retries=3, timeout=1200):
     client = OpenAI(
-        base_url=vllm_config["base_url"],
+        base_url=vllm_config["base_url"] + "/v1",
         api_key=os.getenv("API_KEY"))
     retries = 0
     while retries < max_retries:
         try:
             response = client.chat.completions.create(
-                model=model,
+                model=available_llms[model],
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=16_384,
                 temperature=1.0,
@@ -98,52 +98,46 @@ def call_gpt4_api(prompt, model, max_retries=3, timeout=1200):
     return None
 
 # Call the Hugging Face model with GPU support
-def call_huggingface_model(prompt, tokenizer, model):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
-    inputs = tokenizer(prompt, return_tensors="pt", max_length=1024, truncation=True).to(device)
-    # Increase max_new_tokens to ensure you get the whole answer
-    outputs = model.generate(**inputs, max_new_tokens=600, eos_token_id=tokenizer.eos_token_id, temperature=0.8)
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
-    return response
+# def call_huggingface_model(prompt, tokenizer, model):
+#     device = "cuda" if torch.cuda.is_available() else "cpu"
+#     model.to(device)
+#     inputs = tokenizer(prompt, return_tensors="pt", max_length=1024, truncation=True).to(device)
+#     # Increase max_new_tokens to ensure you get the whole answer
+#     outputs = model.generate(**inputs, max_new_tokens=600, eos_token_id=tokenizer.eos_token_id, temperature=0.8)
+#     response = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+#     return response
 
 # Generate a playlist using the five-shot prompt
 def generate_playlist_five_shot(seed_playlist, llm_model, template_path, verbose, model_name):
     PROMPT_TEMPLATE = load_prompt_template(template_path)
+    tracks = seed_playlist["tracks"]
     input_data = {
         "playlist_title": seed_playlist["playlist_title"],
-        "song1": seed_playlist["song1"],
-        "artist1": seed_playlist["artist1"],
-        "song2": seed_playlist["song2"],
-        "artist2": seed_playlist["artist2"],
-        "song3": seed_playlist["song3"],
-        "artist3": seed_playlist["artist3"],
-        "song4": seed_playlist["song4"],
-        "artist4": seed_playlist["artist4"],
-        "song5": seed_playlist["song5"],
-        "artist5": seed_playlist["artist5"]
     }
+
+    print(tracks)
+    for i in range(5):
+        track = tracks[i] if len(tracks) > i else {"song": "Unknown Song", "artist": "Unknown Artist"}
+        if 'song' not in track or 'artist' not in track:
+            track = {"song": track[0], "artist": track[1]}
+        input_data[f"song{i+1}"] = track['song']
+        input_data[f"artist{i+1}"] = track["artist"]
+
     formatted_prompt = PROMPT_TEMPLATE.format(**input_data)
     if verbose:
         print("Full prompt:", formatted_prompt)
     res = str(call_gpt4_api(formatted_prompt, llm_model))
-    
-    print("Raw Model Output:", res)
+    res = res.replace("Example:\s", "").strip()
+    if verbose:
+        print("Raw Model Output:", res)
+
     try:
-        if "Example:" in res:
-            json_block = re.search(r'Example:\s*(\[[\s\S]+)', res)
-            if json_block:
-                extracted = json_block.group(1).strip()
-            else:
-                print("/!\ No JSON block found after 'Example:'.")
-                return []
+        json_block = re.search(r'\[\s*{[\s\S]+?}\s*\]', res)
+        if json_block:
+            extracted = json_block.group()
         else:
-            json_block = re.search(r'\[\s*{[\s\S]+?}\s*\]', res)
-            if json_block:
-                extracted = json_block.group()
-            else:
-                print("/!\ No JSON blocks found in the response.")
-                return []
+            print("/!\ No JSON blocks found in the response.")
+            return []
         if not extracted.endswith(']'):
             print("Incomplete JSON detected, closing block...")
             extracted = extracted.rstrip() + "]"
@@ -170,49 +164,55 @@ def main(llm_model, yaml_path=None, template_path='./subset_22.yml', verbose = T
         for playlist in playlists:
             playlist['tracks'] = playlist_tracks.get(playlist['pid'], [])[0:5]
 
-    generated_data = {}
+    output_dir = "out_llm_prediction"
+    os.makedirs(output_dir, exist_ok=True)
 
-    for pl in playlists:
-        print(f"\nGeneration for the playlist '{pl['playlist_title']}' (PID {pl['pid']}) in five-shot...")
-        generated_playlist = generate_playlist_five_shot(
+    for pl in tqdm(playlists, desc="Generating playlists"):
+        output_path = os.path.join(output_dir, pl["pid"] + ".yml")
+        if os.path.exists(output_path):
+            if verbose:
+                print(f"{pl['pid']} | {pl['playlist_title']} | SKIPPING")
+            continue  # Skip if the output file already exists
+        elif verbose:
+                print(f"{pl['pid']} | {pl['playlist_title']} | GENERATING")
+
+        tracks = generate_playlist_five_shot(
             pl,
             llm_model,
             template_path,
             verbose,
             llm_model
         )
-        generated_data[pl["pid"]] = {
+        generated_playlist = {
+            "pid": pl["pid"],
             "playlist_title": pl["playlist_title"],
-            "song1": pl["song1"],
-            "artist1": pl["artist1"],
-            "song2": pl["song2"],
-            "artist2": pl["artist2"],
-            "song3": pl["song3"],
-            "artist3": pl["artist3"],
-            "song4": pl["song4"],
-            "artist4": pl["artist4"],
-            "song5": pl["song5"],
-            "artist5": pl["artist5"],
-            "generated_playlist": generated_playlist
+            "tracks": tracks
         }
+        with open(output_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(generated_playlist, f, allow_unicode=True, sort_keys=False)
 
-    output_dir = "Json_file"
-    os.makedirs(output_dir, exist_ok=True)
-    output_filename = "Five_shot_22_song.json"
+    output_filename = "total.json"
     output_path = os.path.join(output_dir, output_filename)
 
+    generated_data = []
+    for filename in sorted([x for x in os.listdir(output_dir) if x.endswith(".yml")]):
+        with open(os.path.join(output_dir, filename), "r", encoding="utf-8") as f:
+            parsed_playlist = yaml.safe_load(f) or []
+            generated_data.append(parsed_playlist)
+
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(generated_data, f, ensure_ascii=False, indent=2)
+        json.dump(generated_data, f, ensure_ascii=False, indent=4)
 
     print(f"\nThe JSON file was generated in : {output_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate playlists using a five-shot prompt with various LLMs.")
-    parser.add_argument("--template_path", type=str, default="prompt_template_five_shot.yml", help="Path to the prompt template YAML file.")
+    parser.add_argument("--template_path", type=str, default="LLM_part/prompt_template_five_shot.yml", help="Path to the prompt template YAML file.")
     parser.add_argument("--llm_model", type=str, default="gemma", choices=available_llms.keys())
     parser.add_argument(
-            '--yaml', default='./subset_22.yml',
+            '--yaml', type=str,
             help="Path to playlists YAML file (for playlist titles and PIDs)"
         )
+    parser.add_argument('--verbose', action='store_true', help="Enable verbose output for debugging.")
     args = parser.parse_args()
-    main(args.llm_model, args.yaml, args.template_path)
+    main(args.llm_model, args.yaml, args.template_path, args.verbose)

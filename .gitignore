@@ -1,6 +1,8 @@
 model
 data
+var.env
 output
+out_llm_prediction
 .vscode
 .idea
 .DS_Store
