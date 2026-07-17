@@ -7,10 +7,15 @@
 
 import csv
 import json
-import os
+import argparse
 import statistics
 import math
 from tqdm import tqdm  # type: ignore
+from data_loader import load_all_playlist_data
+
+# File paths
+items_csv = "./data/items.csv"
+tracks_csv = "./data/tracks.csv"
 
 ########################
 # Functions definition #
@@ -23,17 +28,17 @@ def normalize_song(song):
 
     return (song[0].strip().lower(), song[1].strip().lower())
 
-
+SONG = 0
+ARTIST = 1
 def compute_metrics(recommended_songs, relevant_songs, top_n=10):
     # Convert lists to sets and prepare R-Precision metrics
-
-    G_T = set(relevant_songs)
-    G_A = set(artist for _, artist in relevant_songs)
+    G_T = set([song[SONG] for song in relevant_songs])
+    G_A = set([song[ARTIST] for song in relevant_songs])
 
     R = len(G_T)
     top_r = recommended_songs[:R]
-    S_T = set(top_r)
-    S_A = set(artist for _, artist in top_r)
+    S_T = set([song['song'] for song in top_r])
+    S_A = set([song['artist'] for song in top_r])
 
     exact_matches = S_T & G_T
     matched_artists = S_A & G_A
@@ -41,18 +46,18 @@ def compute_metrics(recommended_songs, relevant_songs, top_n=10):
     artist_score = len(matched_artists) * 0.25
     r_precision = (track_score + artist_score) / R if R > 0 else 0.0
 
-    hits = sum(1 for song in recommended_songs[:top_n] if song in G_T)
+    hits = sum(1 for song in recommended_songs[:top_n] if song['song'] in G_T)
     hit_score = hits / min(top_n, len(G_T)) if len(G_T) > 0 else 0.0
     precision = hits / len(recommended_songs[:top_n]) if recommended_songs[:top_n] else 0.0
     recall = hits / len(G_T) if len(G_T) > 0 else 0.0
 
     mrr = 0.0
     for i, song in enumerate(recommended_songs[:top_n]):
-        if song in G_T:
+        if song['song'] in G_T:
             mrr = 1 / (i + 1)
             break
 
-    relevance_list = [1 if song in G_T else 0 for song in recommended_songs[:top_n]]
+    relevance_list = [1 if song['song'] in G_T else 0 for song in recommended_songs[:top_n]]
     def dcg(rel):
         return sum(rel_i / math.log2(idx + 2) for idx, rel_i in enumerate(rel))
     dcg_val = dcg(relevance_list)
@@ -69,34 +74,6 @@ def compute_metrics(recommended_songs, relevant_songs, top_n=10):
         "NDCG": ndcg
     }
 
-def load_all_playlist_data(items_csv, tracks_csv):
-    #Loads track metadata and the mapping between PID and track once.
-    #Returns a dictionary: {pid: [(track_name, artist_name), ...]}.
-    #This is done to avoid loading the CSV files multiple times.
-    
-    track_metadata = {}
-    with open(tracks_csv, 'r', encoding='utf8') as f:
-        reader = csv.DictReader(f)
-        for row in tqdm(reader, desc="Loading track metadata", unit="track"):
-            track_metadata[row["track_uri"]] = {
-                "track_name": row["track_name"],
-                "artist_name": row["artist_name"],
-            }
-
-    playlist_tracks = {}
-    with open(items_csv, 'r', encoding='utf8') as f:
-        reader = csv.DictReader(f)
-        for row in tqdm(reader, desc="Loading playlist tracks", unit="playlist"):
-            current_pid = row["pid"]
-            track_uri = row["track_uri"]
-            if current_pid not in playlist_tracks:
-                playlist_tracks[current_pid] = []
-            if track_uri in track_metadata:
-                playlist_tracks[current_pid].append(
-                    (track_metadata[track_uri]["track_name"], track_metadata[track_uri]["artist_name"])
-                )
-    return playlist_tracks
-
 def load_generated_data(json_file):
     # Loads the JSON file containing the 22 generated playlists.
     # Assume the JSON is a dictionary with PIDs as keys.
@@ -105,31 +82,25 @@ def load_generated_data(json_file):
         data = json.load(f)
     return data
 
-def main():
-    # File paths
-    items_csv = "/data/csvs/items.csv"
-    tracks_csv = "/data/csvs/tracks.csv"
-    json_file = "Json_file/Five_shot_22_song.json"
-
+def main(json_file):
     generated_data = load_generated_data(json_file)
-    print("Loading all playlist data")
-    playlist_tracks = load_all_playlist_data(items_csv, tracks_csv)
+    print(f"Loaded {len(generated_data)} generated playlists from {json_file}")
+    pids = [int(pl["pid"]) for pl in generated_data]
+
+    print("Loading playlist data")
+    playlist_tracks = load_all_playlist_data(items_csv, tracks_csv, wanted_playlist_ids=pids)
+    print(f"Loaded {len(playlist_tracks.keys())} playlists")
 
     metrics_list = []
 
+    print('Compute metrics')
     # For each playlist generated in the JSON (five-shot mode)
-    for pid, pl_data in generated_data.items():
-        playlist_title = pl_data["playlist_title"]
-        # For five-shot, the seed song is song1 and artist1
-        first_song = pl_data["song1"]
-        artist = pl_data["artist1"]
-        # Convert the generated_playlist (list of dictionaries) to a list of tuples
-        generated_songs = [(item["song"], item["artist"]) for item in pl_data.get("generated_playlist", [])]
+    for pl in tqdm(generated_data):
+        pid = int(pl["pid"])
+        playlist_title = pl["playlist_title"]
+        generated_songs = pl.get("tracks", [])
 
-        seed_song = (first_song, artist)
         relevant_songs = playlist_tracks.get(pid, [])
-        if seed_song:
-            relevant_songs = [song for song in relevant_songs if normalize_song(song) != normalize_song(seed_song)]
         relevant_songs = list(set(relevant_songs))
 
         # Compute metrics
@@ -144,7 +115,7 @@ def main():
             "R-Precision": metrics["R-Precision"],
             "NDCG": metrics["NDCG"]
         })
-        print(f"PID {pid} - Metrics: {metrics}")
+        # print(f"PID {pid} - Metrics: {metrics}")
 
     # Calculate average metrics
     avg_hit = statistics.mean([m["HIT@N"] for m in metrics_list]) if metrics_list else 0
@@ -165,8 +136,9 @@ def main():
         "NDCG": avg_ndcg
     }
     metrics_list.append(average_metrics)
+    print(average_metrics)
 
-    output_csv = "Five_shot_22_metrics.csv"
+    output_csv = json_file.replace('.json', '_metrics.csv')
     with open(output_csv, "w", newline='', encoding="utf8") as csvfile:
         fieldnames = ["pid", "playlist_title", "HIT@N", "Precision@N", "Recall@N", "MRR@N", "R-Precision", "NDCG"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -177,4 +149,11 @@ def main():
     print(f"\nThe metrics for each playlist were written in : {output_csv}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Compute recommendation metrics from generated playlists.")
+    parser.add_argument(
+        "--json-file",
+        default="out_llm_prediction/subset22.json",
+        help="Path to the JSON file containing generated playlists."
+    )
+    args = parser.parse_args()
+    main(args.json_file)

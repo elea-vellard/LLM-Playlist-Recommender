@@ -6,9 +6,11 @@
 ###########
 
 import csv
+import polars as pl
 import yaml
 import statistics
 from tqdm import tqdm  # type: ignore
+from collections import defaultdict
 
 ########################
 # Functions definition #
@@ -25,34 +27,42 @@ def normalize_song(song):
 
     return (song[0].strip().lower(), song[1].strip().lower())
 
-
-
-def load_all_playlist_data(items_csv=items_csv, tracks_csv=tracks_csv):
+def load_all_playlist_data(items_csv=items_csv, tracks_csv=tracks_csv, wanted_playlist_ids=None):
     #Loads track metadata and the mapping between PID and track once.
     #Returns a dictionary: {pid: [(track_name, artist_name), ...]}.
     #This is done to avoid loading the CSV files multiple times.
     
-    track_metadata = {}
-    with open(tracks_csv, 'r', encoding='utf8') as f:
-        reader = csv.DictReader(f)
-        for row in tqdm(reader, desc="Loading track metadata", unit=" tracks"):
-            track_metadata[row["track_uri"]] = {
-                "track_name": row["track_name"],
-                "artist_name": row["artist_name"],
-            }
+    items_lf = pl.scan_csv(items_csv).select(["pid", "track_uri"])
 
-    playlist_tracks = {}
-    with open(items_csv, 'r', encoding='utf8') as f:
-        reader = csv.DictReader(f)
-        for row in tqdm(reader, desc="Loading playlist tracks", unit=" playlists"):
-            current_pid = row["pid"]
-            track_uri = row["track_uri"]
-            if current_pid not in playlist_tracks:
-                playlist_tracks[current_pid] = []
-            if track_uri in track_metadata:
-                playlist_tracks[current_pid].append(
-                    (track_metadata[track_uri]["track_name"], track_metadata[track_uri]["artist_name"])
-                )
+    if wanted_playlist_ids is not None:
+        items_lf = items_lf.filter(
+            pl.col("pid").is_in(wanted_playlist_ids)
+        )
+
+    tracks_lf = pl.scan_csv(tracks_csv).select(
+        ["track_uri", "track_name", "artist_name"]
+    )
+
+    df = (
+        items_lf
+        .join(
+            tracks_lf,
+            on="track_uri",
+            how="inner",
+        )
+        .select(
+            ["pid", "track_name", "artist_name"]
+        )
+        .collect(engine="streaming")
+    )
+
+    playlist_tracks = defaultdict(list)
+
+    for current_pid, track_name, artist_name in df.iter_rows():
+        playlist_tracks[current_pid].append(
+            (track_name, artist_name)
+        )
+
     return playlist_tracks
 
 def load_playlists_yaml(yaml_path: str) -> dict:
